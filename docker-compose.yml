@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: stockai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: stockai
+      POSTGRES_PASSWORD: stockai
+      POSTGRES_DB: stockai
+    ports:
+      - "5433:5432"
+    volumes:
+      - stockai_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockai -d stockai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  stockai_postgres_data:
