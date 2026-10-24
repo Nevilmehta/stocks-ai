@@ -24,9 +24,10 @@ export interface HealthStatus {
   market_data_provider: "mock" | "real";
   ai_provider: "mock" | "gemini" | "groq" | "custom";
   last_market_sync: string | null;
+  last_sync_check_at: string | null;
 }
 
-export type TimeRange = "1M" | "3M" | "6M" | "1Y" | "3Y" | "5Y" | "MAX";
+export type TimeRange = "1D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "3Y" | "MAX";
 
 export interface StockDetail {
   id: string;
@@ -36,6 +37,7 @@ export interface StockDetail {
   sector: string;
   industry: string;
   description: string;
+  index_memberships: string[];
 
   latest_price: number | null;
   previous_close: number | null;
@@ -54,6 +56,7 @@ export interface StockDetail {
   profit_growth: number | null;
   week52_high: number | null;
   week52_low: number | null;
+  volume: number | null;
 }
 
 export interface PricePoint {
@@ -120,10 +123,23 @@ export interface TechnicalIndicators {
 
   price_vs_sma50_percent: number | null;
   price_vs_sma200_percent: number | null;
+  price_vs_ema50_percent: number | null;
+  price_vs_ema200_percent: number | null;
 
   trend: string;
   momentum: string;
+
+  swing_structure: string;
+  fibonacci_levels: Record<string, number> | null;
+  nearest_fibonacci_level: string | null;
+  nearest_fibonacci_distance_percent: number | null;
+
+  signal: TradeSignal;
+  signal_reasons: string[];
+  historical_oversold_forward_return: { occurrences: number; avg_forward_return_30d: number } | null;
 }
+
+export type TradeSignal = "buy" | "sell" | "neutral";
 
 export interface SectorCount {
   sector: string;
@@ -254,6 +270,7 @@ export interface ScreenerRow {
   sector: string;
   latest_price: number | null;
   change_percent: number | null;
+  volume: number | null;
   market_cap: number | null;
   pe_ratio: number | null;
   roe: number | null;
@@ -277,6 +294,52 @@ export interface ScreenerFilters {
   ai_score_min?: number;
 }
 
+export type IndicatorKey = "overall" | "sma" | "ema" | "rsi" | "macd" | "bollinger" | "fibonacci";
+
+export interface SmartIndicatorRow {
+  symbol: string;
+  name: string;
+  sector: string;
+
+  latest_price: number | null;
+  change_percent: number | null;
+  volume: number | null;
+  return_1d: number | null;
+  return_1w: number | null;
+  return_1m: number | null;
+  pe_ratio: number | null;
+
+  rsi_14: number | null;
+  trend: string;
+  swing_structure: string;
+  nearest_fibonacci_level: string | null;
+
+  signal: TradeSignal;
+  signal_reasons: string[];
+
+  indicator: IndicatorKey;
+  indicator_label: string;
+  indicator_value: number | null;
+}
+
+export interface SmartIndicatorFilters {
+  sector?: string;
+  indicator?: IndicatorKey;
+  signal?: TradeSignal;
+  rsi_state?: "oversold" | "overbought" | "any";
+  trend_structure?: "uptrend" | "downtrend" | "sideways" | "any";
+}
+
+export interface IndicatorOption {
+  key: IndicatorKey;
+  label: string;
+}
+
+export interface SmartIndicatorMeta {
+  available_indicators: IndicatorOption[];
+  default_indicator: IndicatorKey;
+}
+
 export interface MostResearchedStock {
   symbol: string;
   name: string;
@@ -291,7 +354,7 @@ export interface AdminAnalytics {
   most_researched: MostResearchedStock[];
 }
 
-export type SyncSource = "scheduled" | "manual_admin" | "manual_upload";
+export type SyncSource = "scheduled" | "manual_admin" | "manual_upload" | "catch_up";
 export type SyncStatus = "success" | "failure";
 
 export interface SyncLogEntry {
@@ -325,6 +388,8 @@ export interface StrategyConfig {
   enable_rsi: boolean;
   enable_macd: boolean;
   enable_bollinger: boolean;
+  enable_fibonacci: boolean;
+  default_smart_indicator: IndicatorKey;
 
   sma_short: number;
   sma_medium: number;
@@ -338,6 +403,7 @@ export interface StrategyConfig {
   macd_signal: number;
   bollinger_period: number;
   bollinger_num_std: number;
+  fibonacci_lookback_days: number;
 
   weight_financial_strength: number;
   weight_growth: number;
@@ -401,4 +467,11 @@ export interface StrategyBacktestResponse {
   active_strategy_name: string;
   checkpoints: BacktestCheckpoint[];
   caveat: string;
+}
+
+export interface AdminNote {
+  id: string;
+  message: string;
+  is_active: boolean;
+  created_at: string;
 }

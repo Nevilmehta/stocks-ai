@@ -1,13 +1,16 @@
 """Backfills real NSE price history for every seeded company. NSE publishes
 one bhavcopy file per trading day covering all listed stocks, so this makes
-one request per weekday (not per company).
+one request per weekday (not per company) - the request count doesn't scale
+with how many companies are tracked, only the per-day DB upsert work does
+(see market_data_sync.py's bulk-upsert implementation for why that stays
+fast even at the full ~2,660-company NSE universe).
 
 Usage (from backend/, with venv activated):
     python scripts/sync_real_market_data.py [--years N]
 
 Idempotent: each day's data is upserted, not duplicated, so it's safe to
-interrupt and re-run. Takes roughly 6-8 minutes for the default 5-year
-backfill (~1250 requests, with a short delay between requests to avoid
+interrupt and re-run. Takes roughly 6-8 minutes for the default 3-year
+backfill (~750 requests, with a short delay between requests to avoid
 tripping NSE's bot-rate detection).
 """
 
@@ -25,22 +28,18 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from app.database import SessionLocal
 from app.models.company import Company
-from app.services.market_data_sync import refresh_financial_ratios_from_latest_price, sync_price_history_for_date
+from app.services.market_data_sync import (
+    refresh_financial_ratios_from_latest_price,
+    sync_price_history_for_date,
+    weekdays_between,
+)
 
 REQUEST_DELAY_SECONDS = 0.3
 
 
-def weekdays_between(start: date, end: date):
-    current = start
-    while current <= end:
-        if current.weekday() < 5:  # Monday-Friday only
-            yield current
-        current += timedelta(days=1)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backfill real NSE price history.")
-    parser.add_argument("--years", type=int, default=5, help="How many years back to backfill (default: 5).")
+    parser.add_argument("--years", type=int, default=3, help="How many years back to backfill (default: 3).")
     args = parser.parse_args()
 
     end = date.today()

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type ElementType } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, Clock, ListChecks, Search, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
+import { Bot, Clock, ListChecks, Megaphone, Search, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 
 import { AIScoreBadge } from "@/components/ai-score-badge";
 import { Badge } from "@/components/ui/badge";
@@ -21,11 +21,13 @@ import {
 } from "@/components/ui/table";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { Pagination, PAGE_SIZE } from "@/components/pagination";
 import { useAuth } from "@/context/auth-context";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { formatDate, formatPercent, formatPrice } from "@/lib/format";
-import type { Company, HealthStatus, MarketOverview, MoverStock, WatchlistItem } from "@/types";
+import { brand } from "@/config/brand";
+import type { AdminNote, Company, HealthStatus, MarketOverview, MoverStock, WatchlistItem } from "@/types";
 
 const SUGGESTED_PROMPTS = [
   "Analyse Reliance Industries",
@@ -92,9 +94,11 @@ export default function DashboardPage() {
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [overview, setOverview] = useState<MarketOverview | null>(null);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [adminNote, setAdminNote] = useState<AdminNote | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     Promise.all([
@@ -102,12 +106,14 @@ export default function DashboardPage() {
       api.get<HealthStatus>("/api/health"),
       api.get<MarketOverview>("/api/stocks/overview"),
       api.get<WatchlistItem[]>("/api/watchlist").catch(() => []),
+      api.get<AdminNote | null>("/api/dashboard-note").catch(() => null),
     ])
-      .then(([companyData, healthData, overviewData, watchlistData]) => {
+      .then(([companyData, healthData, overviewData, watchlistData, noteData]) => {
         setCompanies(companyData);
         setHealth(healthData);
         setOverview(overviewData);
         setWatchlist(watchlistData);
+        setAdminNote(noteData);
       })
       .finally(() => setIsLoading(false));
   }, []);
@@ -125,8 +131,23 @@ export default function DashboardPage() {
     });
   }, [companies, query, selectedSector]);
 
+  // Reset to page 1 whenever the filtered set changes shape, so a search/
+  // sector change doesn't leave the view stranded on a now-out-of-range page.
+  useEffect(() => {
+    setPage(1);
+  }, [query, selectedSector]);
+
+  const visibleCompanies = filteredCompanies.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   const sectorCount = useMemo(() => new Set(companies.map((c) => c.sector)).size, [companies]);
   const isDemoData = health?.market_data_provider === "mock";
+  // last_market_sync is the latest date we actually have priced data for -
+  // correctly doesn't advance on an NSE holiday. last_sync_check_at is the
+  // last time the system actually attempted a check at all (success or not,
+  // new data or not), so a holiday still reads as "checked today" instead of
+  // looking stale just because prices didn't change.
+  const checkedDate = health?.last_sync_check_at?.slice(0, 10) ?? null;
+  const dataIsBehindLastCheck = Boolean(checkedDate && health?.last_market_sync && checkedDate !== health.last_market_sync);
   const totalMoves = (overview?.advancers ?? 0) + (overview?.decliners ?? 0);
   const advancingShare = totalMoves > 0 ? ((overview?.advancers ?? 0) / totalMoves) * 100 : 50;
 
@@ -153,10 +174,25 @@ export default function DashboardPage() {
             ) : (
               <Badge variant="secondary" className="gap-1.5 border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
                 <Clock className="h-3.5 w-3.5" />
-                Live NSE data &mdash; last synced {formatDate(health.last_market_sync)}
+                {dataIsBehindLastCheck
+                  ? `Live NSE data — prices as of ${formatDate(health.last_market_sync)} (checked ${formatDate(checkedDate)}, no new trading data - likely a holiday)`
+                  : `Live NSE data — last synced ${formatDate(health.last_market_sync)}`}
               </Badge>
             ))}
           </div>
+
+          {adminNote && adminNote.message.trim() && (
+            <Card className="border-blue-500/30 bg-blue-500/5">
+              <CardContent className="flex items-start gap-3 pt-6">
+                <Megaphone className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" />
+                <div className="space-y-1.5">
+                  <p className="text-sm font-medium">Note from the StockAI team</p>
+                  <p className="text-sm whitespace-pre-wrap text-foreground">{adminNote.message}</p>
+                  <p className="text-xs text-muted-foreground">{brand.adminNoteDisclaimer}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Card>
@@ -277,7 +313,7 @@ export default function DashboardPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredCompanies.map((company) => (
+                        {visibleCompanies.map((company) => (
                           <TableRow
                             key={company.id}
                             className="cursor-pointer select-none"
@@ -304,6 +340,7 @@ export default function DashboardPage() {
                     </Table>
                   </div>
                 )}
+                <Pagination page={page} totalItems={filteredCompanies.length} onPageChange={setPage} />
                 <p className="mt-3 text-xs text-muted-foreground">
                   Click a company to open its research page with charts, financials and technicals.
                 </p>

@@ -26,6 +26,7 @@ from app.database import SessionLocal
 from app.models.company import Company
 from app.models.sync_log import SyncSource, SyncStatus
 from app.services.market_data_sync import (
+    backfill_missing_trading_days,
     record_sync_result,
     refresh_financial_ratios_from_latest_price,
     sync_price_history_for_date,
@@ -62,6 +63,32 @@ def _run_daily_sync() -> None:
         db.close()
 
 
+def _run_catch_up() -> None:
+    """Runs once on startup, before the first scheduled 20:00 IST tick - so
+    data is never more than one failed attempt stale just because the process
+    wasn't running at the exact cron time (the realistic case for a dev
+    machine, or any restart/deploy). No-op (0 rows) when already current."""
+    db = SessionLocal()
+    try:
+        result = backfill_missing_trading_days(db, date.today())
+        if result["days_synced"]:
+            record_sync_result(
+                db, date.today(), SyncSource.catch_up, SyncStatus.success, rows_synced=result["rows_synced"]
+            )
+            db.commit()
+        logger.info(
+            "Startup catch-up: %d trading day(s) synced, %d rows (was last current as of %s)",
+            result["days_synced"],
+            result["rows_synced"],
+            result["latest_date"],
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("Startup catch-up sync failed")
+    finally:
+        db.close()
+
+
 def start_scheduler() -> None:
     global _scheduler
     if _scheduler is not None:
@@ -73,6 +100,7 @@ def start_scheduler() -> None:
         CronTrigger(day_of_week="mon-fri", hour=20, minute=0, timezone=IST),
         id="daily_nse_sync",
     )
+    _scheduler.add_job(_run_catch_up, id="startup_catch_up")
     _scheduler.start()
     logger.info("Started daily NSE sync scheduler (weekdays, 20:00 IST)")
 

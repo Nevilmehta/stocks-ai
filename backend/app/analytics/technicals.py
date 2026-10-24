@@ -177,3 +177,72 @@ def fifty_two_week_high_low(
     if not recent_highs or not recent_lows:
         return None, None
     return max(recent_highs), min(recent_lows)
+
+
+def find_swing_points(
+    highs: list[float], lows: list[float], pivot_strength: int = 3
+) -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
+    """Classic swing high/low (fractal) detection: a bar is a swing high if it's
+    the max within +/- pivot_strength neighbors, swing low if it's the min.
+    Returns (swing_highs, swing_lows) as (index, value) pairs, oldest -> newest.
+    Returns empty lists rather than raising when there isn't enough history."""
+    n = len(highs)
+    if n < 2 * pivot_strength + 1 or len(lows) != n:
+        return [], []
+
+    swing_highs: list[tuple[int, float]] = []
+    swing_lows: list[tuple[int, float]] = []
+    for i in range(pivot_strength, n - pivot_strength):
+        high_window = highs[i - pivot_strength : i + pivot_strength + 1]
+        if highs[i] == max(high_window):
+            swing_highs.append((i, highs[i]))
+        low_window = lows[i - pivot_strength : i + pivot_strength + 1]
+        if lows[i] == min(low_window):
+            swing_lows.append((i, lows[i]))
+
+    return swing_highs, swing_lows
+
+
+def classify_market_structure(
+    swing_highs: list[tuple[int, float]], swing_lows: list[tuple[int, float]]
+) -> str:
+    """Compares the two most recent swing highs and two most recent swing lows
+    to classify trend structure in plain "higher highs / lower lows" terms."""
+    if len(swing_highs) < 2 or len(swing_lows) < 2:
+        return "Insufficient data"
+
+    higher_high = swing_highs[-1][1] > swing_highs[-2][1]
+    higher_low = swing_lows[-1][1] > swing_lows[-2][1]
+    lower_high = swing_highs[-1][1] < swing_highs[-2][1]
+    lower_low = swing_lows[-1][1] < swing_lows[-2][1]
+
+    if higher_high and higher_low:
+        return "Uptrend (higher highs & higher lows)"
+    if lower_high and lower_low:
+        return "Downtrend (lower highs & lower lows)"
+    return "Sideways / Mixed"
+
+
+FIBONACCI_RATIOS: list[float] = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
+
+
+def fibonacci_retracement_levels(swing_high: float, swing_low: float) -> dict[str, float]:
+    """Standard retracement levels between a swing high and swing low. Returns
+    an empty dict for degenerate/thin-data input (high <= low) rather than
+    raising or returning misleading levels."""
+    if swing_high <= swing_low:
+        return {}
+
+    span = swing_high - swing_low
+    return {f"{ratio * 100:g}%": round(swing_high - span * ratio, 2) for ratio in FIBONACCI_RATIOS}
+
+
+def nearest_fibonacci_level(
+    price: float, levels: dict[str, float]
+) -> tuple[str | None, float | None]:
+    """Named level closest to `price`, plus the % distance from it."""
+    if not levels or not price:
+        return None, None
+    name, value = min(levels.items(), key=lambda item: abs(item[1] - price))
+    distance_percent = round(abs(value - price) / price * 100, 2)
+    return name, distance_percent

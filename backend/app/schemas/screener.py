@@ -8,6 +8,7 @@ class ScreenerRow(BaseModel):
 
     latest_price: float | None
     change_percent: float | None
+    volume: int | None = None
     market_cap: float | None
     pe_ratio: float | None
     roe: float | None

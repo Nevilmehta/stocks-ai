@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -11,6 +11,12 @@ from app.models.user import User
 from app.providers.ai_provider import AIProvider
 from app.providers.market_data import MarketDataProvider
 from app.services.company_matching import find_mentioned_companies
+from app.services.historical_price_lookup import (
+    available_date_range,
+    extract_date_from_message,
+    is_price_lookup_question,
+    lookup_historical_price,
+)
 from app.services.stock_context import build_market_overview_context, build_stock_context
 from app.schemas.research import (
     AIAnalysis,
@@ -140,12 +146,32 @@ def chat(
     if not message:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message cannot be empty")
 
-    all_companies = provider.search_stocks("", limit=100)
+    all_companies = provider.search_stocks("", limit=5000)
     mentioned = find_mentioned_companies(message, all_companies)
     contexts = [ctx for c in mentioned if (ctx := build_stock_context(c.symbol, provider, active)) is not None]
 
+    requested_date = (
+        extract_date_from_message(message, date.today()) if len(contexts) == 1 and is_price_lookup_question(message) else None
+    )
+
     if len(contexts) >= 2:
         answer = ai_provider.compare_stocks(contexts)
+    elif requested_date is not None:
+        symbol = contexts[0].detail.symbol
+        name = contexts[0].detail.name
+        historical = lookup_historical_price(provider, symbol, name, requested_date)
+        if historical is not None:
+            answer = ai_provider.answer_historical_price_question(message, historical)
+        else:
+            date_range = available_date_range(provider, symbol)
+            if date_range:
+                answer = (
+                    f"No price data for {name} ({symbol}) on {requested_date.isoformat()} - "
+                    f"this app's price history covers {date_range[0].isoformat()} to "
+                    f"{date_range[1].isoformat()}. Try a date within that range."
+                )
+            else:
+                answer = f"No price history is available for {name} ({symbol}) at all yet."
     elif not contexts and _is_market_wide_question(message):
         overview = build_market_overview_context(provider, active)
         answer = ai_provider.answer_market_question(message, overview)

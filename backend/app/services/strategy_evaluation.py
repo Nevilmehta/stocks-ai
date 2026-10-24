@@ -42,14 +42,25 @@ _FORWARD_30 = 30
 _FORWARD_90 = 90
 _MIN_ROWS_REQUIRED = 260
 
+# Preview computes a full AI score twice per company (active + proposed
+# config) - at the full ~2,660-company NSE universe that's thousands of
+# technicals+score computations in one synchronous request. Capped the same
+# way screener.py caps its single-pass scoring, just lower since this does
+# 2x the work per company.
+MAX_PREVIEW_COMPANIES = 150
+# Backtest multiplies company count by _NUM_CHECKPOINTS x 2 configs - only
+# matters when no explicit `symbols` filter narrows it (the admin UI always
+# passes one; this guards the "preview against everything" edge case).
+MAX_BACKTEST_COMPANIES = 50
+
 
 def run_preview(
     provider: MarketDataProvider, active: ActiveStrategy, proposed_config: StrategyConfig
 ) -> list[StrategyPreviewRow]:
-    """Recomputes every tracked company's AI score under the proposed config,
+    """Recomputes each tracked company's AI score under the proposed config,
     alongside the currently-active one, using today's data. Read-only."""
     proposed = ActiveStrategy(name="(preview)", config=proposed_config)
-    companies = provider.search_stocks("", limit=100)
+    companies = provider.search_stocks("", limit=5000)[:MAX_PREVIEW_COMPANIES]
 
     rows: list[StrategyPreviewRow] = []
     for company in companies:
@@ -96,7 +107,9 @@ def run_backtest(
     query = db.query(Company)
     if symbols:
         query = query.filter(Company.symbol.in_([s.upper() for s in symbols]))
-    companies = query.all()
+        companies = query.all()
+    else:
+        companies = query.order_by(Company.name).limit(MAX_BACKTEST_COMPANIES).all()
 
     checkpoints: list[BacktestCheckpoint] = []
     for company in companies:

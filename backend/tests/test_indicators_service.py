@@ -26,6 +26,11 @@ def test_empty_history_returns_data_unavailable():
     assert result.trend == "Data unavailable"
     assert result.momentum == "Data unavailable"
     assert result.sma_20 is None
+    assert result.swing_structure == "Data unavailable"
+    assert result.signal == "neutral"
+    assert result.fibonacci_levels is None
+    assert result.price_vs_ema50_percent is None
+    assert result.price_vs_ema200_percent is None
 
 
 def test_strong_uptrend_is_classified_positive():
@@ -39,6 +44,16 @@ def test_strong_uptrend_is_classified_positive():
     assert result.return_1y > 0
     assert result.rsi_14 is not None
     assert 0 <= result.rsi_14 <= 100
+    # A pure monotonic rise pins RSI at 100 (overbought - a bearish factor on
+    # its own) while leaving no swing points, so the signal itself isn't
+    # asserted here; derive_trade_signal's own factor logic is tested
+    # directly with controlled inputs in test_signal.py.
+    assert result.signal in {"buy", "sell", "neutral"}
+    assert result.signal_reasons
+    assert result.fibonacci_levels is not None
+    assert result.nearest_fibonacci_level is not None
+    assert result.price_vs_ema50_percent is not None
+    assert result.price_vs_ema50_percent > 0
 
 
 def test_strong_downtrend_is_classified_negative():
@@ -48,6 +63,9 @@ def test_strong_downtrend_is_classified_negative():
     assert result.trend == "Negative"
     assert result.price_vs_sma200_percent is not None
     assert result.price_vs_sma200_percent < 0
+    assert result.signal in {"buy", "sell", "neutral"}
+    assert result.price_vs_ema200_percent is not None
+    assert result.price_vs_ema200_percent < 0
 
 
 def test_week52_high_low_present_for_long_history():

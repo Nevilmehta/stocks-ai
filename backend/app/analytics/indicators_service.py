@@ -7,6 +7,7 @@ from the pure math in analytics/technicals.py.
 from __future__ import annotations
 
 from app.analytics import technicals as ta
+from app.analytics.signal import derive_trade_signal, historical_oversold_forward_return
 from app.models.price_history import PriceHistory
 from app.schemas.stock import TechnicalIndicators
 from app.schemas.strategy import DEFAULT_STRATEGY_CONFIG, StrategyConfig
@@ -44,8 +45,17 @@ def compute_technical_indicators(
             volatility=None,
             price_vs_sma50_percent=None,
             price_vs_sma200_percent=None,
+            price_vs_ema50_percent=None,
+            price_vs_ema200_percent=None,
             trend="Data unavailable",
             momentum="Data unavailable",
+            swing_structure="Data unavailable",
+            fibonacci_levels=None,
+            nearest_fibonacci_level=None,
+            nearest_fibonacci_distance_percent=None,
+            signal="neutral",
+            signal_reasons=["No price history available"],
+            historical_oversold_forward_return=None,
         )
 
     closes = [float(r.close) for r in rows]
@@ -78,9 +88,32 @@ def compute_technical_indicators(
 
     price_vs_sma50 = ((latest_price - sma50) / sma50 * 100) if sma50 else None
     price_vs_sma200 = ((latest_price - sma200) / sma200 * 100) if sma200 else None
+    price_vs_ema50 = ((latest_price - ema50) / ema50 * 100) if ema50 else None
+    price_vs_ema200 = ((latest_price - ema200) / ema200 * 100) if ema200 else None
 
     trend = _classify_trend(price_vs_sma50, price_vs_sma200)
     momentum = _classify_momentum(rsi14, macd_latest, signal_latest)
+
+    swing_highs, swing_lows = ta.find_swing_points(highs, lows)
+    swing_structure = ta.classify_market_structure(swing_highs, swing_lows)
+
+    lookback = config.fibonacci_lookback_days
+    windowed_highs = highs[-lookback:] if len(highs) > lookback else highs
+    windowed_lows = lows[-lookback:] if len(lows) > lookback else lows
+    fib_levels = (
+        ta.fibonacci_retracement_levels(max(windowed_highs), min(windowed_lows))
+        if windowed_highs and windowed_lows
+        else {}
+    )
+    nearest_name, nearest_distance = ta.nearest_fibonacci_level(latest_price, fib_levels)
+
+    trade_signal = derive_trade_signal(rsi14, price_vs_sma50, price_vs_sma200, swing_structure, config)
+
+    historical_oversold = (
+        historical_oversold_forward_return(rows, config)
+        if rsi14 is not None and rsi14 < config.rsi_oversold
+        else None
+    )
 
     return TechnicalIndicators(
         as_of=rows[-1].date,
@@ -106,8 +139,17 @@ def compute_technical_indicators(
         volatility=_round(volatility),
         price_vs_sma50_percent=_round(price_vs_sma50),
         price_vs_sma200_percent=_round(price_vs_sma200),
+        price_vs_ema50_percent=_round(price_vs_ema50),
+        price_vs_ema200_percent=_round(price_vs_ema200),
         trend=trend,
         momentum=momentum,
+        swing_structure=swing_structure,
+        fibonacci_levels=fib_levels or None,
+        nearest_fibonacci_level=nearest_name,
+        nearest_fibonacci_distance_percent=nearest_distance,
+        signal=trade_signal.signal,
+        signal_reasons=trade_signal.reasons,
+        historical_oversold_forward_return=historical_oversold,
     )
 
 

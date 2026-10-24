@@ -51,6 +51,28 @@ class MarketOverviewContext:
     strategy_name: str = "Default"
 
 
+@dataclass
+class HistoricalPriceContext:
+    """Grounding for "what was X's price on <date>" questions - a specific
+    past trading day's real OHLCV, not the latest snapshot StockContext
+    carries. See app/services/historical_price_lookup.py for how this gets
+    built (date parsing + the nearest-prior-trading-day fallback)."""
+
+    symbol: str
+    name: str
+    requested_date: date
+    resolved_date: date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+    @property
+    def date_was_adjusted(self) -> bool:
+        return self.resolved_date != self.requested_date
+
+
 class AIProvider(ABC):
     @abstractmethod
     def analyse_stock(self, context: StockContext) -> AIAnalysis: ...
@@ -63,6 +85,9 @@ class AIProvider(ABC):
 
     @abstractmethod
     def answer_market_question(self, question: str, overview: MarketOverviewContext) -> str: ...
+
+    @abstractmethod
+    def answer_historical_price_question(self, question: str, context: HistoricalPriceContext) -> str: ...
 
 
 def _fmt_pct(value: float | None) -> str:
@@ -212,6 +237,24 @@ class MockAIProvider(AIProvider):
         lines.append(
             f"{overview.advancers} of {overview.total_companies} tracked stocks advanced and "
             f"{overview.decliners} declined as of {as_of}."
+        )
+        lines.append("")
+        lines.append(DISCLAIMER)
+        return "\n".join(lines)
+
+    def answer_historical_price_question(self, question: str, context: HistoricalPriceContext) -> str:
+        lines = []
+        date_note = (
+            f" ({context.requested_date.isoformat()} wasn't a trading day - showing the nearest "
+            f"previous trading day instead)"
+            if context.date_was_adjusted
+            else ""
+        )
+        lines.append(
+            f"On {context.resolved_date.isoformat()}{date_note}, {context.name} ({context.symbol}) "
+            f"opened at Rs. {_fmt_num(context.open)}, reached a high of Rs. {_fmt_num(context.high)} "
+            f"and a low of Rs. {_fmt_num(context.low)}, and closed at Rs. {_fmt_num(context.close)}, "
+            f"on volume of {context.volume:,} shares."
         )
         lines.append("")
         lines.append(DISCLAIMER)
@@ -439,6 +482,23 @@ class _PromptRewritingAIProvider(AIProvider):
             "conversationally, always stating the date the data is as of somewhere in your "
             "answer. Markdown (short bold labels, bullet points) is fine where it genuinely "
             "helps readability.\n\n"
+            + "Reference data:\n" + draft
+        )
+        try:
+            return self._generate(prompt) or draft
+        except Exception:
+            return draft
+
+    def answer_historical_price_question(self, question: str, context: HistoricalPriceContext) -> str:
+        mock = MockAIProvider()
+        draft = mock.answer_historical_price_question(question, context)
+        prompt = (
+            self._base_instructions()
+            + f'The user asked: "{question}"\n\n'
+            + "Below is the real OHLCV data for the specific date requested - never use a number "
+            "that isn't in it, and never state a different date's figures as if they were the "
+            "requested date's. If the date had to be adjusted (not a trading day), say so plainly. "
+            "Answer directly and conversationally.\n\n"
             + "Reference data:\n" + draft
         )
         try:

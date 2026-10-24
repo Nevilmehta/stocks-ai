@@ -52,10 +52,11 @@ def get_stock_detail(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
 
     price_rows = provider.get_price_history(symbol, timeframe="1Y")
-    latest_price = previous_close = change = change_percent = as_of = None
+    latest_price = previous_close = change = change_percent = as_of = volume = None
     if price_rows:
         latest_price = float(price_rows[-1].close)
         as_of = price_rows[-1].date
+        volume = price_rows[-1].volume
         if len(price_rows) >= 2:
             previous_close = float(price_rows[-2].close)
             change = latest_price - previous_close
@@ -79,6 +80,7 @@ def get_stock_detail(
         sector=company.sector,
         industry=company.industry,
         description=company.description,
+        index_memberships=company.index_memberships,
         latest_price=latest_price,
         previous_close=previous_close,
         change=round(change, 2) if change is not None else None,
@@ -95,6 +97,7 @@ def get_stock_detail(
         profit_growth=float(latest_ratio.profit_growth) if latest_ratio else None,
         week52_high=week52_high,
         week52_low=week52_low,
+        volume=volume,
     )
 
 
@@ -165,7 +168,12 @@ def get_stock_ai_score(
     config = active.config
     annual_periods = [p for p in build_financial_periods(provider, symbol) if p.period_type == PeriodType.annual]
 
-    price_rows = provider.get_price_history(symbol, timeframe="MAX")
+    # "1Y" (not "MAX") - every indicator the score uses (up to SMA_200/52-week
+    # range) needs at most ~252 trading days; fetching the full 3-year window
+    # here would roughly double the data/CPU cost of every AI-score call for
+    # no accuracy benefit, which matters a lot once this runs per-company
+    # across the full ~2,660-company universe (screener, strategy preview).
+    price_rows = provider.get_price_history(symbol, timeframe="1Y")
     technicals = compute_technical_indicators(price_rows, config)
 
     peer_companies = provider.get_companies_by_sector(company.sector, exclude_symbol=symbol)

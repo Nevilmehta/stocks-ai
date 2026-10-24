@@ -48,6 +48,7 @@ def test_parse_current_csv_filters_to_equity_series():
     assert row.open == 3310.00
     assert row.close == 3324.90
     assert row.volume == 2632816
+    assert row.name == "TATA CONSULTANCY SERV LT"
 
 
 def test_infer_trade_date_from_udiff_filename():

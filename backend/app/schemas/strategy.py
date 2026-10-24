@@ -14,17 +14,37 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+IndicatorKey = Literal["overall", "sma", "ema", "rsi", "macd", "bollinger", "fibonacci"]
+
 
 class StrategyConfig(BaseModel):
-    # --- indicator toggles (cosmetic only - see module docstring) ---
+    # --- indicator toggles ---
+    # Cosmetic only for the AI Research Score itself (v1 scope, by explicit
+    # user choice): a disabled indicator still quietly feeds that score
+    # exactly as before - full exclude-and-reweight is a possible future
+    # extension, not built now. They ARE functional for the Smart Indicator
+    # page though (app/routers/smart_indicator.py): only enabled indicators
+    # are selectable there, and default_smart_indicator below picks which one
+    # customers see first.
     enable_sma: bool = True
     enable_ema: bool = True
     enable_rsi: bool = True
     enable_macd: bool = True
     enable_bollinger: bool = True
+    enable_fibonacci: bool = True
+
+    # Which indicator the Smart Indicator page shows by default. "overall" is
+    # a 7th always-available option (not gated by an enable_* flag) that
+    # combines whichever of the 6 indicators above are currently enabled into
+    # one ranked view - see resolve_indicator()/_overall_score() in
+    # app/routers/smart_indicator.py. Customers can switch between "overall"
+    # and whichever of the 6 are currently enabled, but never enable one
+    # admin has turned off.
+    default_smart_indicator: IndicatorKey = "overall"
 
     # --- indicator periods/parameters ---
     sma_short: int = 20
@@ -39,6 +59,7 @@ class StrategyConfig(BaseModel):
     macd_signal: int = 9
     bollinger_period: int = 20
     bollinger_num_std: float = 2.0
+    fibonacci_lookback_days: int = 60
 
     # --- AI research score weights (must sum to ~1.0) ---
     weight_financial_strength: float = 0.25

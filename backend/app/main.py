@@ -4,7 +4,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import admin, auth, compare, health, research, screener, stocks, watchlist
+from app.routers import (
+    admin,
+    auth,
+    compare,
+    dashboard_note,
+    health,
+    research,
+    screener,
+    smart_indicator,
+    stocks,
+    watchlist,
+)
 from app.scheduler import start_scheduler, stop_scheduler
 
 settings = get_settings()
@@ -36,3 +47,5 @@ app.include_router(research.router)
 app.include_router(watchlist.router)
 app.include_router(compare.router)
 app.include_router(screener.router)
+app.include_router(smart_indicator.router)
+app.include_router(dashboard_note.router)

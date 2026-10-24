@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.deps import ActiveStrategy, get_active_strategy, get_market_data_provider, require_admin
+from app.models.admin_note import AdminNote
 from app.models.company import Company
 from app.models.research import MessageRole, ResearchMessage, ResearchSession
 from app.models.strategy import ResearchStrategy
@@ -25,6 +26,7 @@ from app.schemas.admin import (
     SyncLogEntry,
     UploadFileResult,
 )
+from app.schemas.admin_note import AdminNoteCreateRequest, AdminNoteOut
 from app.schemas.strategy import (
     DEFAULT_STRATEGY_CONFIG,
     StrategyBacktestRequest,
@@ -327,3 +329,27 @@ def backtest_strategy(
     for what this does and doesn't account for."""
     checkpoints = run_backtest(db, provider, active, payload.config, payload.symbols)
     return StrategyBacktestResponse(active_strategy_name=active.name, checkpoints=checkpoints, caveat=BACKTEST_CAVEAT)
+
+
+@router.post("/dashboard-note", response_model=AdminNoteOut, status_code=status.HTTP_201_CREATED)
+def post_dashboard_note(
+    payload: AdminNoteCreateRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> AdminNote:
+    """Posts a new note, deactivating whichever one is currently shown on the
+    customer Dashboard (same deactivate-all-others-in-one-transaction pattern
+    as activate_strategy). An empty message IS the "clear the note" action -
+    GET /api/dashboard-note already treats an empty/missing active note the
+    same way, so no separate clear/delete endpoint is needed."""
+    db.query(AdminNote).filter(AdminNote.is_active.is_(True)).update({"is_active": False})
+    note = AdminNote(message=payload.message.strip(), is_active=True, created_by=admin.id)
+    db.add(note)
+    db.commit()
+    db.refresh(note)
+    return note
+
+
+@router.get("/dashboard-note/history", response_model=list[AdminNoteOut])
+def dashboard_note_history(db: Session = Depends(get_db)) -> list[AdminNote]:
+    return db.query(AdminNote).order_by(AdminNote.created_at.desc()).limit(20).all()

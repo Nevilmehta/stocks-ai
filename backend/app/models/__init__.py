@@ -1,3 +1,4 @@
+from app.models.admin_note import AdminNote
 from app.models.company import Company
 from app.models.financials import CompanyFinancials, FinancialRatios
 from app.models.price_history import PriceHistory
@@ -8,6 +9,7 @@ from app.models.user import User
 from app.models.watchlist import Watchlist, WatchlistItem
 
 __all__ = [
+    "AdminNote",
     "User",
     "Company",
     "PriceHistory",

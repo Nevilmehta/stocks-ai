@@ -162,6 +162,33 @@ def test_chat_last_updated_question_states_a_real_date(logged_in_client, db_sess
     assert (date.today() - timedelta(days=1)).isoformat() in content
 
 
+def test_chat_historical_price_question_returns_real_ohlcv(logged_in_client, db_session):
+    _seed_company(db_session, "TCS", "Tata Consultancy Services Ltd")
+    target_date = date.today() - timedelta(days=5)
+
+    response = logged_in_client.post(
+        "/api/research/chat",
+        json={"message": f"what was the tcs closing price on {target_date.isoformat()}"},
+    )
+    assert response.status_code == 200
+    content = response.json()["messages"][1]["content"]
+    assert target_date.isoformat() in content
+    assert "TCS" in content
+
+
+def test_chat_historical_price_question_out_of_range_says_so(logged_in_client, db_session):
+    _seed_company(db_session, "TCS", "Tata Consultancy Services Ltd")
+    far_past = date.today() - timedelta(days=3650)
+
+    response = logged_in_client.post(
+        "/api/research/chat",
+        json={"message": f"what was the tcs closing price on {far_past.isoformat()}"},
+    )
+    assert response.status_code == 200
+    content = response.json()["messages"][1]["content"]
+    assert "No price data" in content
+
+
 def test_chat_with_single_company_mention_grounds_answer(logged_in_client, db_session):
     _seed_company(db_session, "INFY", "Infosys Ltd")
 

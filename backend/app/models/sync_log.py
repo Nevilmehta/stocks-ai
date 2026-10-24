@@ -14,6 +14,7 @@ class SyncSource(str, enum.Enum):
     scheduled = "scheduled"
     manual_admin = "manual_admin"
     manual_upload = "manual_upload"
+    catch_up = "catch_up"
 
 
 class SyncStatus(str, enum.Enum):

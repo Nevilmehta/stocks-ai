@@ -7,8 +7,9 @@ for why.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 import uuid
@@ -25,33 +26,54 @@ def upsert_price_history_rows(db: Session, trade_date: date, bhav_rows: list[Bha
     """Upserts PriceHistory rows for every tracked Company found in `bhav_rows`
     (keyed on the existing (company_id, date) unique constraint). Shared by
     both the automatic/manual NSE fetch path and the admin file-upload path -
-    neither duplicates this logic."""
+    neither duplicates this logic.
+
+    Uses two bulk round-trips (one SELECT for existing rows, one bulk insert
+    + one bulk update) instead of a per-company SELECT+write loop - with
+    ~2,660 tracked companies, the old per-row approach meant ~2,660 round
+    trips *per trading day*, which made a multi-year backfill impractically
+    slow. `bulk_insert_mappings`/`bulk_update_mappings` are plain SQLAlchemy
+    ORM bulk operations (portable across Postgres and the SQLite test DB) -
+    deliberately not a Postgres-only `ON CONFLICT` statement, since this
+    codebase has no precedent for dialect-specific code and the tests run
+    against SQLite."""
     bhav_by_symbol = {row.symbol: row for row in bhav_rows}
-    companies = db.query(Company).all()
+    companies = db.query(Company.id, Company.symbol).all()
+    matched = [(company_id, symbol) for company_id, symbol in companies if symbol in bhav_by_symbol]
+    if not matched:
+        return 0
 
-    synced = 0
-    for company in companies:
-        row = bhav_by_symbol.get(company.symbol)
-        if row is None:
-            continue
+    company_ids = [company_id for company_id, _ in matched]
+    existing_by_company_id = {
+        row.company_id: row
+        for row in db.query(PriceHistory)
+        .filter(PriceHistory.company_id.in_(company_ids), PriceHistory.date == trade_date)
+        .all()
+    }
 
-        existing = (
-            db.query(PriceHistory)
-            .filter(PriceHistory.company_id == company.id, PriceHistory.date == trade_date)
-            .first()
-        )
-        if existing is None:
-            existing = PriceHistory(company_id=company.id, date=trade_date)
-            db.add(existing)
+    to_insert = []
+    to_update = []
+    for company_id, symbol in matched:
+        bhav_row = bhav_by_symbol[symbol]
+        fields = {
+            "open": bhav_row.open,
+            "high": bhav_row.high,
+            "low": bhav_row.low,
+            "close": bhav_row.close,
+            "volume": bhav_row.volume,
+        }
+        existing = existing_by_company_id.get(company_id)
+        if existing is not None:
+            to_update.append({"id": existing.id, **fields})
+        else:
+            to_insert.append({"id": uuid.uuid4(), "company_id": company_id, "date": trade_date, **fields})
 
-        existing.open = row.open
-        existing.high = row.high
-        existing.low = row.low
-        existing.close = row.close
-        existing.volume = row.volume
-        synced += 1
+    if to_insert:
+        db.bulk_insert_mappings(PriceHistory, to_insert)
+    if to_update:
+        db.bulk_update_mappings(PriceHistory, to_update)
 
-    return synced
+    return len(matched)
 
 
 def sync_price_history_for_date(db: Session, trade_date: date) -> int:
@@ -70,6 +92,47 @@ def import_uploaded_bhavcopy(db: Session, trade_date: date, zip_bytes: bytes) ->
     exact same parser and upsert path as the automatic sync."""
     bhav_rows = parse_bhavcopy_zip(trade_date, zip_bytes)
     return upsert_price_history_rows(db, trade_date, bhav_rows)
+
+
+def weekdays_between(start: date, end: date):
+    """Shared by scripts/sync_real_market_data.py's historical backfill and
+    backfill_missing_trading_days' catch-up - a holiday just means
+    sync_price_history_for_date returns 0 for that weekday, not an error."""
+    current = start
+    while current <= end:
+        if current.weekday() < 5:  # Monday-Friday only
+            yield current
+        current += timedelta(days=1)
+
+
+def backfill_missing_trading_days(db: Session, up_to: date) -> dict:
+    """Catches up any real trading days between the latest date already in
+    PriceHistory (exclusive) and `up_to` (inclusive) - run on app startup so
+    "always up to date" doesn't depend on the process happening to be alive at
+    exactly the scheduled cron time (see app/scheduler.py). Cheap no-op when
+    already current: `weekdays_between` yields nothing if there's no gap."""
+    latest = db.query(func.max(PriceHistory.date)).scalar()
+    if latest is None:
+        return {"days_synced": 0, "rows_synced": 0, "latest_date": None}
+
+    days_synced = 0
+    rows_synced = 0
+    for trade_date in weekdays_between(latest + timedelta(days=1), up_to):
+        try:
+            rows = sync_price_history_for_date(db, trade_date)
+        except Exception:
+            db.rollback()
+            continue
+        db.commit()
+        if rows:
+            days_synced += 1
+            rows_synced += rows
+
+    if rows_synced:
+        for company in db.query(Company).all():
+            refresh_financial_ratios_from_latest_price(db, company)
+
+    return {"days_synced": days_synced, "rows_synced": rows_synced, "latest_date": latest}
 
 
 def record_sync_result(

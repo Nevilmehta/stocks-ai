@@ -16,6 +16,7 @@ class StockDetail(BaseModel):
     sector: str
     industry: str
     description: str
+    index_memberships: list[str] = []
 
     latest_price: float | None
     previous_close: float | None
@@ -34,6 +35,7 @@ class StockDetail(BaseModel):
     profit_growth: float | None
     week52_high: float | None
     week52_low: float | None
+    volume: int | None = None
 
 
 class PricePoint(BaseModel):
@@ -98,9 +100,20 @@ class TechnicalIndicators(BaseModel):
 
     price_vs_sma50_percent: float | None
     price_vs_sma200_percent: float | None
+    price_vs_ema50_percent: float | None = None
+    price_vs_ema200_percent: float | None = None
 
     trend: str
     momentum: str
+
+    swing_structure: str = "Not computed"
+    fibonacci_levels: dict[str, float] | None = None
+    nearest_fibonacci_level: str | None = None
+    nearest_fibonacci_distance_percent: float | None = None
+
+    signal: str = "neutral"
+    signal_reasons: list[str] = []
+    historical_oversold_forward_return: dict | None = None
 
 
 class SectorCount(BaseModel):

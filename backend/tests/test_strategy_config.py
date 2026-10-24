@@ -16,6 +16,8 @@ def test_defaults_match_original_hardcoded_indicator_periods():
     assert c.rsi_period == 14
     assert (c.macd_fast, c.macd_slow, c.macd_signal) == (12, 26, 9)
     assert (c.bollinger_period, c.bollinger_num_std) == (20, 2.0)
+    assert c.enable_fibonacci is True
+    assert c.fibonacci_lookback_days == 60
 
 
 def test_defaults_match_original_hardcoded_score_weights():

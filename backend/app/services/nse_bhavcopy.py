@@ -41,6 +41,12 @@ class BhavcopyRow:
     low: float
     close: float
     volume: int
+    # Company name, when the source format has one (current/UDiFF does, legacy
+    # doesn't) - optional/defaulted so this is a non-breaking addition for
+    # existing callers that only ever cared about price. Used by
+    # scripts/seed_all_nse_companies.py to build the company master list
+    # directly from a bhavcopy file, with no separate "equity list" fetch.
+    name: str = ""
 
 
 def _legacy_url(trade_date: date) -> str:
@@ -118,6 +124,7 @@ def parse_current_csv(csv_text: str) -> list[BhavcopyRow]:
                 low=float(record["LwPric"]),
                 close=float(record["ClsPric"]),
                 volume=int(float(record["TtlTradgVol"])),
+                name=record.get("FinInstrmNm", "").strip(),
             )
         )
     return rows

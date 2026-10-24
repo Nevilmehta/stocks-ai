@@ -2,7 +2,17 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, History, LineChart, ListChecks, LogOut, Scale, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import {
+  Bot,
+  History,
+  LineChart,
+  ListChecks,
+  LogOut,
+  Scale,
+  ShieldCheck,
+  SlidersHorizontal,
+  Zap,
+} from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -57,6 +67,9 @@ export function Navbar() {
                 <Link href="/dashboard">Dashboard</Link>
               </Button>
               <Button asChild variant="ghost" className="hidden sm:inline-flex">
+                <Link href="/smart-indicator">Smart Indicator</Link>
+              </Button>
+              <Button asChild variant="ghost" className="hidden sm:inline-flex">
                 <Link href="/research">Research</Link>
               </Button>
               <Button asChild variant="ghost" className="hidden lg:inline-flex">
@@ -78,6 +91,11 @@ export function Navbar() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
                     <Link href="/dashboard">Dashboard</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="sm:hidden">
+                    <Link href="/smart-indicator" className="flex items-center gap-2">
+                      <Zap className="h-4 w-4" /> Smart Indicator
+                    </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link href="/research" className="flex items-center gap-2">

@@ -7,10 +7,12 @@ import {
   ArrowLeft,
   Bot,
   CheckCircle2,
+  ExternalLink,
   Eye,
   ListPlus,
   Loader2,
   ListCheck,
+  Minus,
   Sparkles,
   TrendingDown,
   TrendingUp,
@@ -27,8 +29,9 @@ import { Navbar } from "@/components/layout/navbar";
 import { AIIndicator } from "@/components/ai-indicator";
 import { FinancialBarChart } from "@/components/financial-bar-chart";
 import { StockChart } from "@/components/stock-chart";
+import { brand } from "@/config/brand";
 import { ApiError, api } from "@/lib/api";
-import { formatCrore, formatNumber, formatPercent, formatPrice } from "@/lib/format";
+import { formatCompactVolume, formatCrore, formatNumber, formatPercent, formatPrice } from "@/lib/format";
 import type {
   AIAnalysis,
   AIScore,
@@ -42,12 +45,37 @@ import type {
   TimeRange,
 } from "@/types";
 
-const RANGES: TimeRange[] = ["1M", "3M", "6M", "1Y", "3Y", "5Y", "MAX"];
+const RANGES: TimeRange[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "3Y", "MAX"];
 
 function sentimentClasses(label: string): string {
   if (label === "Positive") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
   if (label === "Negative") return "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400";
   return "border-muted-foreground/20 bg-muted text-muted-foreground";
+}
+
+function swingStructureClasses(structure: string): string {
+  if (structure.startsWith("Uptrend")) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
+  if (structure.startsWith("Downtrend")) return "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400";
+  return "border-muted-foreground/20 bg-muted text-muted-foreground";
+}
+
+function SignalRow({ signal, reasons }: { signal: string; reasons: string[] }) {
+  const style =
+    signal === "buy"
+      ? { Icon: TrendingUp, classes: "text-emerald-600 dark:text-emerald-400", label: "Buy" }
+      : signal === "sell"
+        ? { Icon: TrendingDown, classes: "text-red-600 dark:text-red-400", label: "Sell" }
+        : { Icon: Minus, classes: "text-muted-foreground", label: "Neutral" };
+  const { Icon, classes, label } = style;
+
+  return (
+    <div className="flex items-center justify-between" title={reasons.join(", ")}>
+      <span className="text-sm text-muted-foreground">Signal</span>
+      <span className={`flex items-center gap-1.5 font-medium ${classes}`}>
+        <Icon className="h-4 w-4" /> {label}
+      </span>
+    </div>
+  );
 }
 
 function StatRow({ label, value }: { label: string; value: string }) {
@@ -232,6 +260,11 @@ export default function StockDetailPage({ params }: { params: Promise<{ symbol: 
                       <Sparkles className="h-3 w-3" /> DEMO DATA
                     </Badge>
                   )}
+                  {detail.index_memberships.map((index) => (
+                    <Badge key={index} variant="outline" className="text-xs">
+                      {index}
+                    </Badge>
+                  ))}
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {detail.sector} &middot; {detail.industry}
@@ -250,10 +283,13 @@ export default function StockDetailPage({ params }: { params: Promise<{ symbol: 
                     </span>
                   )}
                   {detail.as_of && <span className="text-xs text-muted-foreground">as of {detail.as_of}</span>}
+                  {detail.volume !== null && (
+                    <span className="text-xs text-muted-foreground">Vol: {formatCompactVolume(detail.volume)}</span>
+                  )}
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   variant={inWatchlist ? "secondary" : "outline"}
                   onClick={handleToggleWatchlist}
@@ -272,6 +308,16 @@ export default function StockDetailPage({ params }: { params: Promise<{ symbol: 
                 <Button onClick={handleAnalyse} disabled={isAnalysing} className="gap-1.5">
                   {isAnalysing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
                   AI Analyse
+                </Button>
+                <Button asChild variant="outline" className="gap-1.5">
+                  <a
+                    href={brand.angelOneUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="StockAI is not affiliated with Angel One and does not execute trades."
+                  >
+                    Trade on Angel One <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
                 </Button>
               </div>
             </div>
@@ -446,7 +492,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ symbol: 
             </TabsContent>
 
             <TabsContent value="technicals" className="space-y-6">
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">Trend &amp; momentum</CardTitle>
@@ -460,12 +506,21 @@ export default function StockDetailPage({ params }: { params: Promise<{ symbol: 
                       <span className="text-sm text-muted-foreground">Momentum</span>
                       <Badge className={sentimentClasses(technicals?.momentum ?? "")}>{technicals?.momentum}</Badge>
                     </div>
+                    {technicals && <SignalRow signal={technicals.signal} reasons={technicals.signal_reasons} />}
                     <StatRow label="RSI (14)" value={formatNumber(technicals?.rsi_14)} />
                     <StatRow label="MACD" value={formatNumber(technicals?.macd)} />
                     <StatRow label="MACD signal" value={formatNumber(technicals?.macd_signal)} />
                     <StatRow label="Price vs SMA 50" value={formatPercent(technicals?.price_vs_sma50_percent)} />
                     <StatRow label="Price vs SMA 200" value={formatPercent(technicals?.price_vs_sma200_percent)} />
                     <StatRow label="Volatility (annualized)" value={formatPercent(technicals?.volatility)} />
+                    {technicals?.historical_oversold_forward_return && (
+                      <p className="pt-1 text-xs text-muted-foreground">
+                        Historically, after {technicals.historical_oversold_forward_return.occurrences} similar
+                        oversold signals, this stock averaged{" "}
+                        {formatPercent(technicals.historical_oversold_forward_return.avg_forward_return_30d)} over
+                        the following 30 trading days. Past performance is not indicative of future results.
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -498,10 +553,42 @@ export default function StockDetailPage({ params }: { params: Promise<{ symbol: 
                     <StatRow label="1Y return" value={formatPercent(technicals?.return_1y)} />
                   </CardContent>
                 </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Swing structure &amp; Fibonacci</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Structure</span>
+                      <Badge className={swingStructureClasses(technicals?.swing_structure ?? "")}>
+                        {technicals?.swing_structure}
+                      </Badge>
+                    </div>
+                    <StatRow
+                      label="Nearest Fibonacci level"
+                      value={technicals?.nearest_fibonacci_level ?? "Data unavailable"}
+                    />
+                    <StatRow
+                      label="Distance from level"
+                      value={formatPercent(technicals?.nearest_fibonacci_distance_percent)}
+                    />
+                    {technicals?.fibonacci_levels && (
+                      <div className="space-y-1 pt-2">
+                        {Object.entries(technicals.fibonacci_levels).map(([name, value]) => (
+                          <div key={name} className="flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">{name}</span>
+                            <span className="tabular-nums">{formatPrice(value)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Indicators are calculated directly from historical price data. This is research
-                framing, not a trade signal - StockAI does not label anything Buy or Sell.
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Trend/momentum/moving-average/range figures are plain calculations from historical price
+                data, shown as research framing only. {brand.smartIndicatorDisclaimer}
               </p>
             </TabsContent>
 

@@ -22,12 +22,13 @@ from app.models.financials import CompanyFinancials, FinancialRatios
 from app.models.price_history import PriceHistory
 
 TIMEFRAME_DAYS: dict[str, int | None] = {
+    "1D": 2,  # small buffer so a Monday/post-holiday request still finds the last trading day
+    "1W": 8,
     "1M": 31,
     "3M": 93,
     "6M": 186,
     "1Y": 366,
     "3Y": 366 * 3,
-    "5Y": 366 * 5,
     "MAX": None,
 }
 
@@ -186,10 +187,20 @@ class _DbMarketDataProvider(MarketDataProvider):
         }
 
     def get_companies_by_sector(self, sector: str, exclude_symbol: str | None = None) -> list[Company]:
+        # "Unclassified" isn't a real sector - it's the catch-all for every
+        # company with no Nifty index match (~2,000+ of the ~2,660 NSE
+        # universe). Treating that bucket as "peers" for valuation comparison
+        # is both meaningless (comparing P/E against random unrelated
+        # companies isn't a real peer comparison) and, at that size, a real
+        # performance problem (every AI-score computation would pull and
+        # score thousands of "peers"). Real sectors are capped at a sample
+        # size that's still a meaningful average without unbounded cost.
+        if sector == "Unclassified":
+            return []
         query = self.db.query(Company).filter(Company.sector == sector)
         if exclude_symbol:
             query = query.filter(Company.symbol != exclude_symbol.upper())
-        return query.order_by(Company.name).all()
+        return query.order_by(Company.name).limit(15).all()
 
 
 class MockMarketDataProvider(_DbMarketDataProvider):

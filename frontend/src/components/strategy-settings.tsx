@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { FlaskConical, History, Loader2, Save, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { ApiError, api } from "@/lib/api";
 import type {
+  IndicatorKey,
   StrategyBacktestResponse,
   StrategyConfig,
   StrategyOut,
@@ -64,6 +66,25 @@ function ToggleField({
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4" />
       {label}
     </label>
+  );
+}
+
+const INDICATOR_OPTIONS: { key: IndicatorKey; label: string }[] = [
+  { key: "overall", label: "Overall (combines whichever indicators below are enabled)" },
+  { key: "sma", label: "SMA" },
+  { key: "ema", label: "EMA" },
+  { key: "rsi", label: "RSI" },
+  { key: "macd", label: "MACD" },
+  { key: "bollinger", label: "Bollinger Bands" },
+  { key: "fibonacci", label: "Fibonacci" },
+];
+
+function IndicatorSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="rounded-lg border p-3">
+      <h5 className="mb-2 text-sm font-medium">{title}</h5>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{children}</div>
+    </div>
   );
 }
 
@@ -205,48 +226,101 @@ export function StrategySettingsSection() {
       <CardContent className="space-y-6">
         <div>
           <h4 className="mb-2 text-sm font-medium">Indicators</h4>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <ToggleField label="SMA" checked={formConfig.enable_sma} onChange={(v) => updateField("enable_sma", v)} />
-            <ToggleField label="EMA" checked={formConfig.enable_ema} onChange={(v) => updateField("enable_ema", v)} />
-            <ToggleField label="RSI" checked={formConfig.enable_rsi} onChange={(v) => updateField("enable_rsi", v)} />
-            <ToggleField label="MACD" checked={formConfig.enable_macd} onChange={(v) => updateField("enable_macd", v)} />
-            <ToggleField
-              label="Bollinger"
-              checked={formConfig.enable_bollinger}
-              onChange={(v) => updateField("enable_bollinger", v)}
-            />
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Toggles are cosmetic (hide from charts) - they don&apos;t change the AI score in this version.
+          <p className="mb-3 text-xs text-muted-foreground">
+            Each indicator here is enabled/configured independently. Enabling/disabling one is cosmetic for
+            the AI Research Score (a disabled indicator still quietly feeds that score), but it IS what
+            controls the Smart Indicator page - customers can only switch between indicators enabled here,
+            never one you&apos;ve turned off.
           </p>
-        </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-          <NumberField label="SMA short" value={formConfig.sma_short} onChange={(v) => updateField("sma_short", v)} />
-          <NumberField label="SMA medium" value={formConfig.sma_medium} onChange={(v) => updateField("sma_medium", v)} />
-          <NumberField label="SMA long" value={formConfig.sma_long} onChange={(v) => updateField("sma_long", v)} />
-          <NumberField label="EMA short" value={formConfig.ema_short} onChange={(v) => updateField("ema_short", v)} />
-          <NumberField label="EMA medium" value={formConfig.ema_medium} onChange={(v) => updateField("ema_medium", v)} />
-          <NumberField label="EMA long" value={formConfig.ema_long} onChange={(v) => updateField("ema_long", v)} />
-          <NumberField label="RSI period" value={formConfig.rsi_period} onChange={(v) => updateField("rsi_period", v)} />
-          <NumberField label="MACD fast" value={formConfig.macd_fast} onChange={(v) => updateField("macd_fast", v)} />
-          <NumberField label="MACD slow" value={formConfig.macd_slow} onChange={(v) => updateField("macd_slow", v)} />
-          <NumberField
-            label="MACD signal"
-            value={formConfig.macd_signal}
-            onChange={(v) => updateField("macd_signal", v)}
-          />
-          <NumberField
-            label="Bollinger period"
-            value={formConfig.bollinger_period}
-            onChange={(v) => updateField("bollinger_period", v)}
-          />
-          <NumberField
-            label="Bollinger std-dev"
-            value={formConfig.bollinger_num_std}
-            step={0.1}
-            onChange={(v) => updateField("bollinger_num_std", v)}
-          />
+          <div className="mb-4 max-w-xs space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Default Smart Indicator page view</Label>
+            <Select
+              value={formConfig.default_smart_indicator}
+              onValueChange={(value) => updateField("default_smart_indicator", value as IndicatorKey)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {INDICATOR_OPTIONS.map((option) => (
+                  <SelectItem key={option.key} value={option.key}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <IndicatorSection title="SMA">
+              <ToggleField label="Enabled" checked={formConfig.enable_sma} onChange={(v) => updateField("enable_sma", v)} />
+              <NumberField label="Short" value={formConfig.sma_short} onChange={(v) => updateField("sma_short", v)} />
+              <NumberField label="Medium" value={formConfig.sma_medium} onChange={(v) => updateField("sma_medium", v)} />
+              <NumberField label="Long" value={formConfig.sma_long} onChange={(v) => updateField("sma_long", v)} />
+            </IndicatorSection>
+
+            <IndicatorSection title="EMA">
+              <ToggleField label="Enabled" checked={formConfig.enable_ema} onChange={(v) => updateField("enable_ema", v)} />
+              <NumberField label="Short" value={formConfig.ema_short} onChange={(v) => updateField("ema_short", v)} />
+              <NumberField label="Medium" value={formConfig.ema_medium} onChange={(v) => updateField("ema_medium", v)} />
+              <NumberField label="Long" value={formConfig.ema_long} onChange={(v) => updateField("ema_long", v)} />
+            </IndicatorSection>
+
+            <IndicatorSection title="RSI">
+              <ToggleField label="Enabled" checked={formConfig.enable_rsi} onChange={(v) => updateField("enable_rsi", v)} />
+              <NumberField label="Period" value={formConfig.rsi_period} onChange={(v) => updateField("rsi_period", v)} />
+              <NumberField
+                label="Oversold"
+                value={formConfig.rsi_oversold}
+                onChange={(v) => updateField("rsi_oversold", v)}
+              />
+              <NumberField
+                label="Overbought"
+                value={formConfig.rsi_overbought}
+                onChange={(v) => updateField("rsi_overbought", v)}
+              />
+            </IndicatorSection>
+
+            <IndicatorSection title="MACD">
+              <ToggleField label="Enabled" checked={formConfig.enable_macd} onChange={(v) => updateField("enable_macd", v)} />
+              <NumberField label="Fast" value={formConfig.macd_fast} onChange={(v) => updateField("macd_fast", v)} />
+              <NumberField label="Slow" value={formConfig.macd_slow} onChange={(v) => updateField("macd_slow", v)} />
+              <NumberField label="Signal" value={formConfig.macd_signal} onChange={(v) => updateField("macd_signal", v)} />
+            </IndicatorSection>
+
+            <IndicatorSection title="Bollinger Bands">
+              <ToggleField
+                label="Enabled"
+                checked={formConfig.enable_bollinger}
+                onChange={(v) => updateField("enable_bollinger", v)}
+              />
+              <NumberField
+                label="Period"
+                value={formConfig.bollinger_period}
+                onChange={(v) => updateField("bollinger_period", v)}
+              />
+              <NumberField
+                label="Std-dev"
+                value={formConfig.bollinger_num_std}
+                step={0.1}
+                onChange={(v) => updateField("bollinger_num_std", v)}
+              />
+            </IndicatorSection>
+
+            <IndicatorSection title="Fibonacci">
+              <ToggleField
+                label="Enabled"
+                checked={formConfig.enable_fibonacci}
+                onChange={(v) => updateField("enable_fibonacci", v)}
+              />
+              <NumberField
+                label="Lookback (days)"
+                value={formConfig.fibonacci_lookback_days}
+                onChange={(v) => updateField("fibonacci_lookback_days", v)}
+              />
+            </IndicatorSection>
+          </div>
         </div>
 
         <div>
@@ -322,16 +396,6 @@ export function StrategySettingsSection() {
               label="P/E fallback high"
               value={formConfig.pe_fallback_high}
               onChange={(v) => updateField("pe_fallback_high", v)}
-            />
-            <NumberField
-              label="RSI oversold"
-              value={formConfig.rsi_oversold}
-              onChange={(v) => updateField("rsi_oversold", v)}
-            />
-            <NumberField
-              label="RSI overbought"
-              value={formConfig.rsi_overbought}
-              onChange={(v) => updateField("rsi_overbought", v)}
             />
             <NumberField
               label="Risk: Moderate cutoff"

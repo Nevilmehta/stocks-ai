@@ -22,16 +22,23 @@ def run_screener(
     provider: MarketDataProvider = Depends(get_market_data_provider),
     active: ActiveStrategy = Depends(get_active_strategy),
 ) -> list[ScreenerRow]:
-    """Evaluates every seeded company against the given thresholds. Small,
-    fixed universe (15 demo companies) - a simple in-memory filter is plenty;
-    no query builder or pagination needed for this MVP."""
-    companies = provider.search_stocks("", limit=100)
+    """Evaluates candidate companies against the given thresholds with a
+    simple in-memory filter - no query builder needed, but even just building
+    a StockDetail (let alone a full AI score) is real per-company work, so
+    the candidate list itself is capped at MAX_CANDIDATES *before* either
+    stage runs - otherwise an unfiltered request against the full ~2,660
+    company NSE universe would do thousands of detail/score computations
+    synchronously in one request. A sector filter is applied first (DB-level,
+    cheap), so filtering by sector sees every company in that sector, not a
+    truncated slice of the whole universe."""
+    MAX_CANDIDATES = 150
+    companies = provider.search_stocks("", limit=5000)
+    if sector:
+        companies = [c for c in companies if c.sector == sector]
+    companies = companies[:MAX_CANDIDATES]
 
     rows: list[ScreenerRow] = []
     for company in companies:
-        if sector and company.sector != sector:
-            continue
-
         detail = get_stock_detail(company.symbol, provider)
 
         if market_cap_min is not None and (detail.market_cap is None or detail.market_cap < market_cap_min):
@@ -69,6 +76,7 @@ def run_screener(
                 sector=detail.sector,
                 latest_price=detail.latest_price,
                 change_percent=detail.change_percent,
+                volume=detail.volume,
                 market_cap=detail.market_cap,
                 pe_ratio=detail.pe_ratio,
                 roe=detail.roe,

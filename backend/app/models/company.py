@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import String, Text
+from sqlalchemy import JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -16,3 +16,6 @@ class Company(Base):
     sector: Mapped[str] = mapped_column(String(120), nullable=False)
     industry: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Nifty indices this symbol is a constituent of, e.g. ["NIFTY 50", "NIFTY BANK"].
+    # Empty for the ~2000+ small/micro-caps not in any Nifty index - expected, not a bug.
+    index_memberships: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)

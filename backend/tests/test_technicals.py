@@ -3,9 +3,13 @@ import math
 from app.analytics.technicals import (
     annualized_volatility,
     bollinger_bands,
+    classify_market_structure,
     ema_series,
+    fibonacci_retracement_levels,
     fifty_two_week_high_low,
+    find_swing_points,
     macd,
+    nearest_fibonacci_level,
     period_return,
     rsi_series,
     sma_series,
@@ -112,3 +116,61 @@ def test_fifty_two_week_high_low():
     high, low = fifty_two_week_high_low(highs, lows)
     assert high == max(highs[-252:])
     assert low == min(lows[-252:])
+
+
+def test_find_swing_points_returns_empty_for_thin_history():
+    highs = [100.0, 101.0, 102.0]
+    lows = [95.0, 96.0, 97.0]
+    swing_highs, swing_lows = find_swing_points(highs, lows, pivot_strength=3)
+    assert swing_highs == []
+    assert swing_lows == []
+
+
+def test_find_swing_points_detects_a_clean_peak_and_trough():
+    # Rises to a peak at index 5, then falls to a trough at index 10, then rises again.
+    highs = [100, 101, 102, 103, 104, 105, 104, 103, 102, 101, 100, 101, 102, 103]
+    lows = [h - 5 for h in highs]
+    swing_highs, swing_lows = find_swing_points(highs, lows, pivot_strength=3)
+    assert (5, 105) in swing_highs
+    assert (10, 95) in swing_lows
+
+
+def test_classify_market_structure_detects_uptrend():
+    swing_highs = [(2, 100.0), (8, 110.0)]
+    swing_lows = [(5, 90.0), (11, 95.0)]
+    assert classify_market_structure(swing_highs, swing_lows) == "Uptrend (higher highs & higher lows)"
+
+
+def test_classify_market_structure_detects_downtrend():
+    swing_highs = [(2, 110.0), (8, 100.0)]
+    swing_lows = [(5, 95.0), (11, 90.0)]
+    assert classify_market_structure(swing_highs, swing_lows) == "Downtrend (lower highs & lower lows)"
+
+
+def test_classify_market_structure_insufficient_data():
+    assert classify_market_structure([], []) == "Insufficient data"
+    assert classify_market_structure([(1, 100.0)], [(2, 90.0)]) == "Insufficient data"
+
+
+def test_fibonacci_retracement_levels_span_high_to_low():
+    levels = fibonacci_retracement_levels(swing_high=200.0, swing_low=100.0)
+    assert levels["0%"] == 200.0
+    assert levels["100%"] == 100.0
+    assert levels["50%"] == 150.0
+    assert levels["61.8%"] == round(200.0 - 100.0 * 0.618, 2)
+
+
+def test_fibonacci_retracement_levels_empty_for_degenerate_input():
+    assert fibonacci_retracement_levels(swing_high=100.0, swing_low=100.0) == {}
+    assert fibonacci_retracement_levels(swing_high=90.0, swing_low=100.0) == {}
+
+
+def test_nearest_fibonacci_level_picks_closest():
+    levels = {"0%": 200.0, "50%": 150.0, "100%": 100.0}
+    name, distance = nearest_fibonacci_level(148.0, levels)
+    assert name == "50%"
+    assert distance == round(2.0 / 148.0 * 100, 2)
+
+
+def test_nearest_fibonacci_level_empty_levels():
+    assert nearest_fibonacci_level(100.0, {}) == (None, None)
