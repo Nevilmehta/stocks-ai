@@ -44,7 +44,7 @@ const THEME_COLORS = {
   },
 };
 
-export function StockChart({ data }: { data: PricePoint[] }) {
+export function StockChart({ data, timeVisible = false }: { data: PricePoint[]; timeVisible?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Area"> | ISeriesApi<"Candlestick"> | null>(null);
@@ -95,6 +95,8 @@ export function StockChart({ data }: { data: PricePoint[] }) {
     if (!chart) return;
     const colors = THEME_COLORS[resolvedTheme === "dark" ? "dark" : "light"];
 
+    chart.timeScale().applyOptions({ timeVisible });
+
     if (seriesRef.current) {
       chart.removeSeries(seriesRef.current);
       seriesRef.current = null;
@@ -117,8 +119,10 @@ export function StockChart({ data }: { data: PricePoint[] }) {
           });
     seriesRef.current = series;
 
-    const timeFor = (dateStr: string): UTCTimestamp =>
-      (new Date(dateStr + "T00:00:00Z").getTime() / 1000) as UTCTimestamp;
+    // Bare "YYYY-MM-DD" strings parse as UTC midnight per the ISO 8601 spec,
+    // and a full ISO datetime (intraday points) parses as that exact instant
+    // - no special-casing needed between daily and intraday data here.
+    const timeFor = (dateStr: string): UTCTimestamp => (new Date(dateStr).getTime() / 1000) as UTCTimestamp;
 
     if (chartType === "area") {
       (series as ISeriesApi<"Area">).setData(
@@ -145,7 +149,7 @@ export function StockChart({ data }: { data: PricePoint[] }) {
     );
 
     chart.timeScale().fitContent();
-  }, [data, chartType, resolvedTheme]);
+  }, [data, chartType, resolvedTheme, timeVisible]);
 
   return (
     <div>

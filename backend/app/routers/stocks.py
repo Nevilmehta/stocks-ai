@@ -14,12 +14,15 @@ from app.schemas.stock import (
     AIScore,
     AIScoreSubscores,
     FinancialPeriod,
+    IntradayHistory,
+    IntradayPoint,
     MarketOverview,
     PricePoint,
     StockDetail,
     TechnicalIndicators,
 )
 from app.services.financial_periods import build_financial_periods
+from app.services.intraday_data import fetch_latest_intraday_session
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"], dependencies=[Depends(get_current_user)])
 
@@ -128,6 +131,53 @@ def get_stock_history(
     ]
 
 
+@router.get("/{symbol}/peers", response_model=list[CompanyPublic])
+def get_stock_peers(
+    symbol: str, provider: MarketDataProvider = Depends(get_market_data_provider)
+) -> list[Company]:
+    """Same-sector companies, for the stock page's Peers tab. Reuses
+    `get_companies_by_sector` (already capped, already treats the
+    "Unclassified" bucket as peer-less - see its own docstring) instead of
+    having the frontend fetch the full ~2,660-company list and filter
+    client-side, which was real, measurable waste: ~446KB transferred and
+    parsed on every single stock page visit just to find 2-3 peers."""
+    company = provider.get_company(symbol)
+    if company is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+    return provider.get_companies_by_sector(company.sector, exclude_symbol=symbol)
+
+
+@router.get("/{symbol}/intraday", response_model=IntradayHistory)
+def get_stock_intraday(
+    symbol: str, provider: MarketDataProvider = Depends(get_market_data_provider)
+) -> IntradayHistory:
+    """Real 1-minute bars for the most recent NSE trading session, fetched
+    live from Yahoo Finance's unofficial chart API (see
+    app/services/intraday_data.py's module docstring for what was verified
+    before building this and its real limitations). Deliberately not stored
+    in PriceHistory - this is a fetch-on-demand view of the last few days
+    only, not a historical archive, and the source can't be hammered in bulk
+    anyway. `points` is simply empty (not a 404) when Yahoo has no usable
+    data for this symbol - not every NSE company is reachable this way, and
+    that's a normal, expected outcome here, not an error."""
+    company = provider.get_company(symbol)
+    if company is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+
+    result = fetch_latest_intraday_session(company.symbol)
+    if result is None:
+        return IntradayHistory(trading_date=None, points=[])
+
+    trading_date, bars = result
+    return IntradayHistory(
+        trading_date=trading_date,
+        points=[
+            IntradayPoint(time=bar.time, open=bar.open, high=bar.high, low=bar.low, close=bar.close, volume=bar.volume)
+            for bar in bars
+        ],
+    )
+
+
 @router.get("/{symbol}/financials", response_model=list[FinancialPeriod])
 def get_stock_financials(
     symbol: str, provider: MarketDataProvider = Depends(get_market_data_provider)
@@ -149,7 +199,12 @@ def get_stock_technicals(
     if company is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
 
-    rows = provider.get_price_history(symbol, timeframe="MAX")
+    # "1Y" (not "MAX") - matches get_stock_ai_score's own reasoning just
+    # below: every indicator this computes (up to SMA_200/EMA_200, 60-day
+    # Fibonacci lookback) needs at most ~252 trading days, and fetching/
+    # processing the full up-to-3-year history here was pure extra cost on
+    # every single stock-page view for zero accuracy benefit.
+    rows = provider.get_price_history(symbol, timeframe="1Y")
     return compute_technical_indicators(rows, active.config)
 
 

@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { MultiSelectFilter } from "@/components/multi-select-filter";
 import { Pagination, PAGE_SIZE } from "@/components/pagination";
 import { useAuth } from "@/context/auth-context";
 import { api } from "@/lib/api";
@@ -97,7 +98,8 @@ export default function DashboardPage() {
   const [adminNote, setAdminNote] = useState<AdminNote | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [selectedSector, setSelectedSector] = useState<string | null>(null);
+  const [selectedSectors, setSelectedSectors] = useState<string[]>([]);
+  const [selectedIndices, setSelectedIndices] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -126,16 +128,32 @@ export default function DashboardPage() {
         company.symbol.toLowerCase().includes(q) ||
         company.name.toLowerCase().includes(q) ||
         company.sector.toLowerCase().includes(q);
-      const matchesSector = !selectedSector || company.sector === selectedSector;
-      return matchesQuery && matchesSector;
+      const matchesSector = selectedSectors.length === 0 || selectedSectors.includes(company.sector);
+      const matchesIndex =
+        selectedIndices.length === 0 || company.index_memberships.some((i) => selectedIndices.includes(i));
+      return matchesQuery && matchesSector && matchesIndex;
     });
-  }, [companies, query, selectedSector]);
+  }, [companies, query, selectedSectors, selectedIndices]);
+
+  // Nifty index membership isn't visible anywhere except opening each stock
+  // individually - this makes it directly browsable/filterable from the
+  // dashboard instead, the same way sector pills already work. Counts are
+  // derived from the already-loaded company list, no extra fetch.
+  const indexCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const company of companies) {
+      for (const index of company.index_memberships) {
+        counts.set(index, (counts.get(index) ?? 0) + 1);
+      }
+    }
+    return Array.from(counts.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [companies]);
 
   // Reset to page 1 whenever the filtered set changes shape, so a search/
-  // sector change doesn't leave the view stranded on a now-out-of-range page.
+  // sector/index change doesn't leave the view stranded on a now-out-of-range page.
   useEffect(() => {
     setPage(1);
-  }, [query, selectedSector]);
+  }, [query, selectedSectors, selectedIndices]);
 
   const visibleCompanies = filteredCompanies.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -194,7 +212,7 @@ export default function DashboardPage() {
             </Card>
           )}
 
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Companies tracked</CardTitle>
@@ -239,14 +257,6 @@ export default function DashboardPage() {
                 )}
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">AI provider</CardTitle>
-              </CardHeader>
-              <CardContent className="text-3xl font-semibold capitalize">
-                {isLoading ? <Skeleton className="h-9 w-16" /> : health?.ai_provider}
-              </CardContent>
-            </Card>
           </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -265,35 +275,46 @@ export default function DashboardPage() {
                   />
                 </div>
 
-                {overview && overview.sector_breakdown.length > 0 && (
-                  <div className="mb-4 flex flex-wrap gap-1.5">
-                    <button
-                      onClick={() => setSelectedSector(null)}
-                      className={cn(
-                        "rounded-full border px-2.5 py-1 text-xs transition-colors",
-                        selectedSector === null
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:bg-accent",
-                      )}
-                    >
-                      All sectors
-                    </button>
-                    {overview.sector_breakdown.map((s) => (
-                      <button
-                        key={s.sector}
-                        onClick={() => setSelectedSector((prev) => (prev === s.sector ? null : s.sector))}
-                        className={cn(
-                          "rounded-full border px-2.5 py-1 text-xs transition-colors",
-                          selectedSector === s.sector
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:bg-accent",
-                        )}
+                <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {overview && overview.sector_breakdown.length > 0 && (
+                    <MultiSelectFilter
+                      label="Sector"
+                      placeholder="All sectors"
+                      selected={selectedSectors}
+                      onChange={setSelectedSectors}
+                      options={overview.sector_breakdown.map((s) => ({
+                        value: s.sector,
+                        label: s.sector,
+                        count: s.count,
+                      }))}
+                    />
+                  )}
+
+                  {indexCounts.length > 0 && (
+                    <MultiSelectFilter
+                      label="Nifty index membership"
+                      placeholder="All indices"
+                      selected={selectedIndices}
+                      onChange={setSelectedIndices}
+                      options={indexCounts.map(([index, count]) => ({ value: index, label: index, count }))}
+                    />
+                  )}
+
+                  {(selectedSectors.length > 0 || selectedIndices.length > 0) && (
+                    <div className="flex items-end">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedSectors([]);
+                          setSelectedIndices([]);
+                        }}
                       >
-                        {s.sector} <span className="opacity-70">({s.count})</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                        Clear filters
+                      </Button>
+                    </div>
+                  )}
+                </div>
 
                 {isLoading ? (
                   <div className="space-y-2">

@@ -16,6 +16,7 @@ export interface Company {
   exchange: string;
   sector: string;
   industry: string;
+  index_memberships: string[];
 }
 
 export interface HealthStatus {
@@ -66,6 +67,20 @@ export interface PricePoint {
   low: number;
   close: number;
   volume: number;
+}
+
+export interface IntradayPoint {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface IntradayHistory {
+  trading_date: string | null;
+  points: IntradayPoint[];
 }
 
 export type PeriodType = "annual" | "quarterly";

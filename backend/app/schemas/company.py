@@ -12,3 +12,4 @@ class CompanyPublic(BaseModel):
     exchange: str
     sector: str
     industry: str
+    index_memberships: list[str] = []

@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Bot,
   CheckCircle2,
+  Clock,
   ExternalLink,
   Eye,
   ListPlus,
@@ -31,13 +32,14 @@ import { FinancialBarChart } from "@/components/financial-bar-chart";
 import { StockChart } from "@/components/stock-chart";
 import { brand } from "@/config/brand";
 import { ApiError, api } from "@/lib/api";
-import { formatCompactVolume, formatCrore, formatNumber, formatPercent, formatPrice } from "@/lib/format";
+import { formatCompactVolume, formatCrore, formatDate, formatNumber, formatPercent, formatPrice } from "@/lib/format";
 import type {
   AIAnalysis,
   AIScore,
   Company,
   FinancialPeriod,
   HealthStatus,
+  IntradayHistory,
   PeriodType,
   PricePoint,
   StockDetail,
@@ -99,6 +101,9 @@ export default function StockDetailPage({ params }: { params: Promise<{ symbol: 
   const [aiScore, setAiScore] = useState<AIScore | null>(null);
   const [peers, setPeers] = useState<Company[]>([]);
   const [range, setRange] = useState<TimeRange>("1Y");
+  const [showIntraday, setShowIntraday] = useState(false);
+  const [intraday, setIntraday] = useState<IntradayHistory | null>(null);
+  const [isIntradayLoading, setIsIntradayLoading] = useState(false);
   const [periodType, setPeriodType] = useState<PeriodType>("annual");
   const [notFound, setNotFound] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -117,17 +122,17 @@ export default function StockDetailPage({ params }: { params: Promise<{ symbol: 
       api.get<TechnicalIndicators>(`/api/stocks/${symbol}/technicals`),
       api.get<FinancialPeriod[]>(`/api/stocks/${symbol}/financials`),
       api.get<HealthStatus>("/api/health"),
-      api.get<Company[]>("/api/stocks"),
+      api.get<Company[]>(`/api/stocks/${symbol}/peers`),
       api.get<AIScore>(`/api/stocks/${symbol}/ai-score`).catch(() => null),
       api.get<{ symbol: string }[]>("/api/watchlist").catch(() => []),
     ])
-      .then(([detailData, technicalsData, financialsData, healthData, companies, aiScoreData, watchlistItems]) => {
+      .then(([detailData, technicalsData, financialsData, healthData, peerCompanies, aiScoreData, watchlistItems]) => {
         setDetail(detailData);
         setTechnicals(technicalsData);
         setFinancials(financialsData);
         setHealth(healthData);
         setAiScore(aiScoreData);
-        setPeers(companies.filter((c) => c.sector === detailData.sector && c.symbol !== symbol));
+        setPeers(peerCompanies);
         setInWatchlist(watchlistItems.some((item) => item.symbol === symbol));
       })
       .catch((error) => {
@@ -162,6 +167,26 @@ export default function StockDetailPage({ params }: { params: Promise<{ symbol: 
       cancelled = true;
     };
   }, [symbol, range, notFound]);
+
+  useEffect(() => {
+    if (notFound || !showIntraday) return;
+    let cancelled = false;
+    setIsIntradayLoading(true);
+    api
+      .get<IntradayHistory>(`/api/stocks/${symbol}/intraday`)
+      .then((data) => {
+        if (!cancelled) setIntraday(data);
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("Failed to load intraday data.");
+      })
+      .finally(() => {
+        if (!cancelled) setIsIntradayLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol, showIntraday, notFound]);
 
   useEffect(() => {
     setAiAnalysis(null);
@@ -325,20 +350,60 @@ export default function StockDetailPage({ params }: { params: Promise<{ symbol: 
 
           <Card>
             <CardContent className="pt-6">
-              <div className="mb-4 flex flex-wrap gap-1.5">
+              <div className="mb-4 flex flex-wrap items-center gap-1.5">
                 {RANGES.map((r) => (
                   <Button
                     key={r}
                     size="sm"
-                    variant={range === r ? "default" : "outline"}
+                    variant={!showIntraday && range === r ? "default" : "outline"}
                     className="h-7 px-2.5 text-xs"
-                    onClick={() => setRange(r)}
+                    onClick={() => {
+                      setShowIntraday(false);
+                      setRange(r);
+                    }}
                   >
                     {r}
                   </Button>
                 ))}
+                <span className="mx-1 h-4 w-px bg-border" />
+                <Button
+                  size="sm"
+                  variant={showIntraday ? "default" : "outline"}
+                  className="h-7 gap-1 px-2.5 text-xs"
+                  onClick={() => setShowIntraday(true)}
+                  title="Real minute-by-minute chart for the most recent NSE trading session - free, unofficial data source, not available for every stock."
+                >
+                  <Clock className="h-3 w-3" /> Intraday
+                </Button>
               </div>
-              {isHistoryLoading ? (
+              {showIntraday ? (
+                isIntradayLoading ? (
+                  <Skeleton className="h-[360px] w-full sm:h-[420px]" />
+                ) : intraday && intraday.points.length > 0 ? (
+                  <>
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      Showing the {intraday.points.length}-minute session from {formatDate(intraday.trading_date)} -
+                      minute data is fetched live from a free third-party source (not NSE directly) and may not be
+                      available for every stock.
+                    </p>
+                    <StockChart
+                      data={intraday.points.map((p) => ({
+                        date: p.time,
+                        open: p.open,
+                        high: p.high,
+                        low: p.low,
+                        close: p.close,
+                        volume: p.volume,
+                      }))}
+                      timeVisible
+                    />
+                  </>
+                ) : (
+                  <p className="flex h-[360px] items-center justify-center text-center text-sm text-muted-foreground sm:h-[420px]">
+                    Intraday data isn&apos;t available for this stock right now.
+                  </p>
+                )
+              ) : isHistoryLoading ? (
                 <Skeleton className="h-[360px] w-full sm:h-[420px]" />
               ) : (
                 <StockChart data={history} />

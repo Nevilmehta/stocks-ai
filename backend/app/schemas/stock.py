@@ -47,6 +47,20 @@ class PricePoint(BaseModel):
     volume: int
 
 
+class IntradayPoint(BaseModel):
+    time: datetime.datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
+class IntradayHistory(BaseModel):
+    trading_date: datetime.date | None
+    points: list[IntradayPoint]
+
+
 class FinancialPeriod(BaseModel):
     period_type: PeriodType
     period_label: str
